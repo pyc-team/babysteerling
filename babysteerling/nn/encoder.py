@@ -44,8 +44,9 @@ class SparseEmbeddingToConcept(BaseConceptLayer):
             self.B = nn.Parameter(torch.randn(rank, d) * 0.02)  # shape: [rank, d]
         self.top_k = top_k
 
-    def activation(self, embeddings):
-        u = torch.sigmoid(self.g(embeddings))  # shape: [B, T, d] -> [B, T, m]
+    def activation(self, embeddings, logits=None):
+        logits = self.g(embeddings) if logits is None else logits
+        u = torch.sigmoid(logits)  # shape: [B, T, d] -> [B, T, m]
         return sparsify_top_k(u, self.top_k)
 
     def embed(self, u):
@@ -53,12 +54,12 @@ class SparseEmbeddingToConcept(BaseConceptLayer):
             return u @ self.K  # shape: [B, T, m] @ [m, d] -> [B, T, d]
         return (u @ self.A) @ self.B  # shape: [B, T, m] @ [m, rank] -> [B, T, rank] -> @ [rank, d] -> [B, T, d]
 
-    def forward(self, embeddings):
+    def forward(self, embeddings, logits=None):
         # split into activation()/embed() (rather than one inline forward) so
         # babysteerling.steering's InterventionModule can wrap activation() alone -- a clean
         # single-tensor-in/out callable -- to intervene on concept activations without touching
         # the embedding-sum step
-        u = self.activation(embeddings)
+        u = self.activation(embeddings, logits=logits)
         u_hat = self.embed(u)
         return u, u_hat
 

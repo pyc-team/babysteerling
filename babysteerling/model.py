@@ -16,6 +16,8 @@ contribution, an unknown-concept contribution, and a residual contribution -- wh
 the model's predictions attributable back to specific concepts.
 """
 
+import math
+
 import torch
 import torch.nn as nn
 from torch.nn import functional as F
@@ -53,6 +55,7 @@ class SteerlingGPT(nn.Module):
             n_embed, n_concepts, unknown_ratio=unknown_ratio, p_epsilon=p_epsilon,
             unknown_rank=unknown_rank, top_k_known=top_k_known, top_k_unknown=top_k_unknown,
         )
+        nn.init.constant_(self.bottleneck.known.g[-1].bias, -math.log(block_size))
         tied_embedding = self.backbone.token_embedding_table.weight if tie_weights else None
         if head_type == "linear":
             self.head = LinearEmbeddingToConcept(

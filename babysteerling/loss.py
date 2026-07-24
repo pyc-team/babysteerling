@@ -26,25 +26,28 @@ class ConceptLoss(nn.Module):
     predicted activation into a single per-document probability via a soft-OR (1 - product of
     "concept absent" probabilities across tokens) before comparing to the binary label -- the
     loss is satisfied as soon as the concept is confidently predicted at *any* token in the span.
+    Computing the same expression from logits avoids multiplying saturated probabilities.
     """
 
-    def forward(self, k, doc_spans):
+    def forward(self, k_logits, doc_spans):
         """
-        k: [B, T, n] predicted known-concept activations (post-sigmoid).
+        k_logits: [B, T, n] predicted known-concept logits.
         doc_spans: list of (batch_idx, tok_start, tok_end, concept_ids), one per document
             overlapping the current batch of windows (see data/utils.py's build_supervision()).
         """
         if not doc_spans:
-            return torch.tensor(0.0, device=k.device)
-        n = k.shape[-1]
-        total = k.new_zeros(())
+            return k_logits.new_zeros(())
+        n = k_logits.shape[-1]
+        total = k_logits.new_zeros(())
         for batch_idx, tok_start, tok_end, concept_ids in doc_spans:
-            k_span = k[batch_idx, tok_start:tok_end, :]  # shape: [B, T, n] -> [doc_len, n], this doc's own tokens only
-            k_chunk = 1 - torch.prod(1 - k_span, dim=0)  # shape: [doc_len, n] -> [n], soft-OR aggregation over the doc
-            y = k.new_zeros(n)  # shape: [n], multi-hot ground-truth label for this document
-            y[concept_ids] = 1.0
-            # clamp avoids log(0) in BCE when a prediction is fully saturated at 0 or 1
-            total = total + F.binary_cross_entropy(k_chunk.clamp(1e-6, 1 - 1e-6), y, reduction='sum')
+            # softplus(logit) is the negative log-probability that a concept is absent
+            evidence = F.softplus(k_logits[batch_idx, tok_start:tok_end]).sum(dim=0)
+            y = torch.zeros(n, dtype=torch.bool, device=k_logits.device)
+            y[concept_ids] = True
+            total = total + (
+                -torch.log(-torch.expm1(-evidence[y])).sum()
+                + evidence[~y].sum()
+            ) / n
         return total / len(doc_spans)  # average per-document loss, so batch size doesn't change the scale
 
 
@@ -120,7 +123,7 @@ def compute_losses(logits, targets, intermediates, doc_spans,
     else:
         lm_loss = F.cross_entropy(logits[mask], targets[mask])  # shape: [B, T, vocab] -> [n_masked, vocab] vs [n_masked]
 
-    concept_loss = _concept_loss_fn(intermediates['k'], doc_spans)
+    concept_loss = _concept_loss_fn(intermediates['k_logits'], doc_spans)
     rec_loss = _rec_loss_fn(intermediates['u_hat'], intermediates['u_hat_gt'], mask=mask)
     indep_loss = _indep_loss_fn(intermediates['k_hat'], intermediates['u_hat'])
 
