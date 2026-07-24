@@ -9,7 +9,7 @@ grad_clip: 1.0
 weight_decay: 0.1
 
 # loss term weights (paper's Eq. 15: L = L_lm + lambda_concept*L_concept + lambda_rec*L_rec + lambda_indep*L_indep)
-lambda_concept: 1.0
+lambda_concept: 8.0
 lambda_rec: 1.0
 lambda_indep: 1.0
 

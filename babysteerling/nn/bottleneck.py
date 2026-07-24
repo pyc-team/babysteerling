@@ -32,19 +32,20 @@ class ConceptBottleneck(nn.Module):
         self.residual = ResidualModule(p_epsilon)
 
     def forward(self, h, known_labels=None):
-        k, k_hat = self.known(h)
-        u, u_hat = self.unknown(h)
+        k_logits = self.known.g(h)
+        k, k_hat = self.known(h, logits=k_logits)
+        u, u_hat = self.unknown(h.detach())
 
         k_hat_gt, u_hat_gt = None, None
         if known_labels is not None:
             k_hat_gt = self.known.ground_truth_embedding(known_labels)  # shape: [B, T, d]
-            u_hat_gt = h - k_hat_gt  # shape: [B, T, d], target for the unknown head's reconstruction loss
+            u_hat_gt = h.detach() - k_hat_gt  # shape: [B, T, d], target for the unknown head's reconstruction loss
 
         epsilon = self.residual(h, k_hat, u_hat)  # shape: [B, T, d]
         h_bar = k_hat + u_hat + epsilon  # shape: [B, T, d], exactly reconstructs h in expectation
 
         intermediates = {
-            'k': k, 'u': u, 'k_hat': k_hat, 'u_hat': u_hat,
+            'k_logits': k_logits, 'k': k, 'u': u, 'k_hat': k_hat, 'u_hat': u_hat,
             'k_hat_gt': k_hat_gt, 'u_hat_gt': u_hat_gt, 'epsilon': epsilon,
         }
         return h_bar, intermediates
