@@ -1,4 +1,4 @@
-"""Standalone smoke test for BabyAtlas's streaming reservoir sampler.
+"""Standalone test for BabyAtlas's streaming reservoir sampler.
 
 Run from the repository root:
     python scripts/test_reservoir_sampling.py
@@ -19,7 +19,7 @@ DELIMITER = "<|endoftext|>"
 DOCUMENTS = ["first story", "second story", "third story"]
 
 
-def run_smoke_test():
+def run_synthetic_test():
     with TemporaryDirectory() as directory:
         corpus_path = Path(directory) / "stories.txt"
         corpus_path.write_text(DELIMITER.join(DOCUMENTS) + DELIMITER, encoding="utf-8")
@@ -36,7 +36,7 @@ def run_smoke_test():
         assert sample_one == sample_two
         assert len(sample_one) == 2
 
-    print("Reservoir sampling smoke test passed.")
+    print("Reservoir sampling test passed.")
 
 
 def sample_real_corpus(input_path, num_documents, seed):
@@ -45,7 +45,6 @@ def sample_real_corpus(input_path, num_documents, seed):
     print(f"Sampled {len(documents)} documents from {input_path}.")
     if documents:
         print(f"First sampled document: {len(documents[0])} characters")
-        print("\n--- First 500 characters ---")
         print(documents[0][:500])
 
 
@@ -54,14 +53,14 @@ def main():
     parser.add_argument(
         "--input-path",
         type=Path,
-        help="Optional real corpus to sample. Without this, run the fast synthetic smoke test.",
+        help="Optional real corpus to sample. Without this, run the fast synthetic test.",
     )
     parser.add_argument("--num-documents", type=int, default=5000)
     parser.add_argument("--seed", type=int, default=1337)
     args = parser.parse_args()
 
     if args.input_path is None:
-        run_smoke_test()
+        run_synthetic_test()
     elif not args.input_path.is_file():
         parser.error(f"input file does not exist: {args.input_path}")
     else:

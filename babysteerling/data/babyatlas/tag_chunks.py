@@ -26,12 +26,11 @@ DEFAULT_PROMPT_TEMPLATE = (
 
 
 def _iter_documents(input_path, delimiter, read_size=1024 * 1024):
-    """Yield delimiter-separated documents without loading the corpus into RAM."""
+    """Read documents one at a time without loading the whole corpus into RAM."""
     if not delimiter:
         raise ValueError("document delimiter must be a non-empty string")
 
-    # A delimiter can fall across two reads, so retain the unfinished final piece until
-    # the next read.  Memory use is bounded by one read plus the longest single document.
+    # Keep the final piece in case it continues in the next chunk.
     with open(input_path, 'r', encoding='utf-8') as f:
         remainder = ""
         while chunk := f.read(read_size):
@@ -48,12 +47,7 @@ def _iter_documents(input_path, delimiter, read_size=1024 * 1024):
 
 
 def load_documents(input_path, num_documents, delimiter="<|endoftext|>", seed=1337):
-    """Uniformly sample documents using a streaming, fixed-size reservoir.
-
-    This has the same sampling distribution as shuffling the full corpus and keeping
-    ``num_documents`` entries, but only retains the requested sample in memory.  This
-    matters for TinyStories, whose raw training file is several gigabytes.
-    """
+    """Sample documents uniformly while keeping only ``num_documents`` in memory."""
     if num_documents < 0:
         raise ValueError("num_documents must be non-negative")
     if num_documents == 0:
@@ -68,15 +62,13 @@ def load_documents(input_path, num_documents, delimiter="<|endoftext|>", seed=13
             reservoir.append(document)
             continue
 
-        # For the nth document, replace one of the n reservoir positions with
-        # probability num_documents / n.  Therefore every corpus document has
-        # exactly the same final chance of being selected.
+        # Pick a position among all documents seen so far. Replace only if it is in
+        # the reservoir, giving every document an equal chance of being selected.
         replacement_index = rng.randrange(documents_seen)
         if replacement_index < num_documents:
             reservoir[replacement_index] = document
 
-    # Reservoir slots are not corpus order, but shuffle them so downstream tagging
-    # order is also seed-deterministic and unrelated to input-file order.
+    # Randomize the sampled order reproducibly.
     rng.shuffle(reservoir)
     return reservoir
 
