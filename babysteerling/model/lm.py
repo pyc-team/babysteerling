@@ -68,6 +68,13 @@ class LM(nn.Module, ABC):
         """Generate a sequence of tokens from the model."""
         raise NotImplementedError
 
+    def diagnostics(self, *args, **kwargs) -> dict:
+        """Optional post-training checks a subclass can expose (e.g. concept activation
+        stats, steering sanity checks). DiagnosticsLogger calls this and logs whatever it
+        returns; no-op by default so models that don't define one aren't affected.
+        """
+        return {}
+
 
 class ILM(LM, ABC):
     """Interface for interpretable language models (ILMs)."""

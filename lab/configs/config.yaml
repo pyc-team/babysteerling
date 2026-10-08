@@ -2,8 +2,8 @@
 # on the command line, e.g. `python train.py model=deep_head data.batch_size=32`.
 defaults:
   - data: tinystories
-  - model: dlm_steerling
-  - loss: steerling
+  - model: alm_residual
+  - loss: residual
   - training: default
   - wandb: default
   - atlas: default

@@ -162,19 +162,22 @@ def calibrate_gamma(direction, head, tau=4.0):
     direction may be a single [D] vector shared by the whole batch (returns a float), or a
     per-row [B, D] batch of directions -- e.g. one concept per window (returns a [B] tensor).
     """
-    if head.head_type != "linear":
+    if head.__class__.__name__ == "Linear":
+        weight = head.weight  # shape: [vocab, D]
+    elif head.head_type == "linear":
+        weight = head.head.weight
+    else:
         raise ValueError(
             "calibrate_gamma requires head_type='linear' (Eq. 19 assumes a linear LM head)"
         )
+
     if direction.dim() == 1:
         alignment = (
-            head.head.weight @ direction
+            weight @ direction
         )  # shape: [vocab, D] @ [D] -> [vocab], e_c . W_y for every y
         peak = alignment.max().item()
         return tau / peak
-    alignment = (
-        direction @ head.head.weight.T
-    )  # shape: [B, D] @ [D, vocab] -> [B, vocab]
+    alignment = direction @ weight.T  # shape: [B, D] @ [D, vocab] -> [B, vocab]
     peak = alignment.max(dim=-1).values  # shape: [B]
     return tau / peak.clamp(min=1e-6)
 

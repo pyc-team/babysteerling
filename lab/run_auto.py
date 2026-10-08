@@ -1,3 +1,4 @@
+import csv
 import hashlib
 import json
 import os
@@ -15,6 +16,7 @@ from pytorch_lightning.callbacks import TQDMProgressBar, ModelCheckpoint
 from torch_concepts.nn import DeterministicInference
 
 from babysteerling import diffusion
+from babysteerling.callback import DiagnosticsLogger
 from babysteerling.data.utils import load_tokenizer
 from babysteerling.loader import ConceptDataModule
 from babysteerling.trainer import LightningLM
@@ -103,6 +105,7 @@ def main(cfg: DictConfig):
 
     # 6. Instantiate Trainer
     gen_logger = instantiate(cfg.training.generation_callback, decode_fn=decode)
+    diagnostics_logger = DiagnosticsLogger(decode_fn=decode)
     checkpoint_callback = ModelCheckpoint(
         dirpath=run_ckpt_dir,
         filename=cfg.training.checkpoint_filename,
@@ -120,7 +123,12 @@ def main(cfg: DictConfig):
         check_val_every_n_epoch=cfg.training.check_val_every_n_epoch,
         limit_val_batches=cfg.training.limit_val_batches,
         logger=wandb_logger,
-        callbacks=[TQDMProgressBar(refresh_rate=1), checkpoint_callback, gen_logger],
+        callbacks=[
+            TQDMProgressBar(refresh_rate=1),
+            checkpoint_callback,
+            gen_logger,
+            diagnostics_logger,
+        ],
     )
 
     # 7. Start Training
@@ -131,12 +139,57 @@ def main(cfg: DictConfig):
                     f"\n[Resumption] Found existing checkpoint for hash '{config_hash}'. Resuming from: {resume_ckpt_path}\n"
                 )
                 trainer.fit(model=pl_model, datamodule=dm, ckpt_path=resume_ckpt_path)
+            else:
+                print(
+                    f"\n[Already Trained] Loading checkpoint for hash '{config_hash}' without retraining: {resume_ckpt_path}\n"
+                )
+                pl_model = LightningLM.load_from_checkpoint(
+                    resume_ckpt_path, model=model
+                )
+                diagnostics_logger.log_diagnostics(trainer, pl_model)
         else:
             print(
                 f"\n[Fresh Run] No checkpoint found for hash '{config_hash}'. Starting new run...\n"
             )
             trainer.fit(model=pl_model, datamodule=dm)
         print("\nTrainer execution finished successfully!")
+
+        # 8. Report: validation metrics -> CSV, alongside the resolved config,
+        # both keyed by config_hash so they sit next to the checkpoint they belong to.
+        config_path = os.path.join(run_ckpt_dir, "config.yaml")
+        if not os.path.exists(config_path):
+            OmegaConf.save(cfg, config_path)
+
+        val_results = trainer.validate(model=pl_model, datamodule=dm)
+        metrics = val_results[0] if val_results else {}
+        metrics_path = os.path.join(run_ckpt_dir, "metrics.csv")
+        with open(metrics_path, "w", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow(["metric", "value"])
+            for key, value in metrics.items():
+                writer.writerow([key, value])
+        print(f"\n[Report] Wrote validation metrics to: {metrics_path}\n")
+
+        # Concept top-k heatmap data (only models overriding LM.diagnostics() return this,
+        # e.g. ConceptResidualALM -- no-op dict for every other model type).
+        pl_model.model.eval()
+        with torch.no_grad():
+            diagnostics = pl_model.model.diagnostics(decode)
+        heatmap_fig = diagnostics.get("concept_topk_heatmap")
+        if heatmap_fig is not None:
+            trace = heatmap_fig.data[0]
+            heatmap_path = os.path.join(run_ckpt_dir, "concept_topk_heatmap.json")
+            with open(heatmap_path, "w") as f:
+                json.dump(
+                    {
+                        "concepts": [str(c) for c in trace.y],
+                        "columns": [str(c) for c in trace.x],
+                        "weights": [[float(w) for w in row] for row in trace.z],
+                        "tokens": [[str(t) for t in row] for row in trace.text],
+                    },
+                    f,
+                )
+            print(f"[Report] Wrote concept top-k heatmap data to: {heatmap_path}\n")
     finally:
         wandb.finish()
 

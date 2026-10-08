@@ -1,0 +1,7 @@
+defaults:
+  - alm
+
+_target_: babysteerling.model.alm_residual.ConceptResidualALM
+wandb_name: "alm-concept-residual"
+
+tie_weights: true

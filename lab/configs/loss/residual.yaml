@@ -1,0 +1,23 @@
+# configs/loss/interpretable.yaml
+_target_: babysteerling.loss.CompositeLoss
+
+losses:
+  token:
+    - _target_: babysteerling.loss.TokenLoss
+    - 1.0
+  concept:
+    - _target_: babysteerling.loss.ConceptLoss
+    - 1.0
+  token_residual:
+    - _target_: babysteerling.loss.TokenResidualLoss
+    - 1.0
+
+metrics:
+  token_accuracy:
+    _target_: babysteerling.metric.TokenAccuracy
+  token_accuracy_residual:
+    _target_: babysteerling.metric.TokenResidualAccuracy
+  concept_auc:
+    _target_: babysteerling.metric.ConceptAUC
+  causal_concept_effect:
+    _target_: babysteerling.metric.CausalConceptEffect

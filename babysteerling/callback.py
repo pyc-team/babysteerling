@@ -39,3 +39,33 @@ class TextGenerationLogger(Callback):
                     "global_step": trainer.global_step,
                 }
             )
+
+
+class DiagnosticsLogger(Callback):
+    """Calls model.diagnostics() and logs the dict it returns -- appended to the same W&B run,
+    not a new one. Also callable directly (log_diagnostics), for runs that load an
+    already-trained checkpoint instead of calling trainer.fit().
+    """
+
+    def __init__(self, decode_fn):
+        super().__init__()
+        self.decode_fn = decode_fn
+
+    @torch.no_grad()
+    def on_fit_end(self, trainer, pl_module) -> None:
+        self.log_diagnostics(trainer, pl_module)
+
+    @torch.no_grad()
+    def log_diagnostics(self, trainer, pl_module) -> None:
+        model = pl_module.model
+        model.eval()
+        diagnostics = model.diagnostics(self.decode_fn)
+        if not diagnostics:
+            return
+
+        print(f"\nDiagnostics (step {trainer.global_step}): {diagnostics}")
+
+        if trainer.logger and hasattr(trainer.logger, "experiment"):
+            trainer.logger.experiment.log(
+                {f"diagnostics/{k}": v for k, v in diagnostics.items()}
+            )
