@@ -25,14 +25,52 @@ DEFAULT_PROMPT_TEMPLATE = (
 )
 
 
+def _iter_documents(input_path, delimiter, read_size=1024 * 1024):
+    """Read documents one at a time without loading the whole corpus into RAM."""
+    if not delimiter:
+        raise ValueError("document delimiter must be a non-empty string")
+
+    # Keep the final piece in case it continues in the next chunk.
+    with open(input_path, 'r', encoding='utf-8') as f:
+        remainder = ""
+        while chunk := f.read(read_size):
+            pieces = (remainder + chunk).split(delimiter)
+            remainder = pieces.pop()
+            for piece in pieces:
+                document = piece.strip()
+                if document:
+                    yield document
+
+        document = remainder.strip()
+        if document:
+            yield document
+
+
 def load_documents(input_path, num_documents, delimiter="<|endoftext|>", seed=1337):
-    """Split a raw corpus on `delimiter` into individual documents and sample num_documents."""
-    with open(input_path, "r", encoding="utf-8") as f:
-        text = f.read()
-    documents = [d.strip() for d in text.split(delimiter)]
-    documents = [d for d in documents if d]
-    random.Random(seed).shuffle(documents)
-    return documents[:num_documents]
+    """Sample documents uniformly while keeping only ``num_documents`` in memory."""
+    if num_documents < 0:
+        raise ValueError("num_documents must be non-negative")
+    if num_documents == 0:
+        return []
+
+    rng = random.Random(seed)
+    reservoir = []
+    documents_seen = 0
+    for document in _iter_documents(input_path, delimiter):
+        documents_seen += 1
+        if len(reservoir) < num_documents:
+            reservoir.append(document)
+            continue
+
+        # Pick a position among all documents seen so far. Replace only if it is in
+        # the reservoir, giving every document an equal chance of being selected.
+        replacement_index = rng.randrange(documents_seen)
+        if replacement_index < num_documents:
+            reservoir[replacement_index] = document
+
+    # Randomize the sampled order reproducibly.
+    rng.shuffle(reservoir)
+    return reservoir
 
 
 def parse_tags(output_text):
