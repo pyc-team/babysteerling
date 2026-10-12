@@ -1,14 +1,25 @@
 import torch
+import torch.nn as nn
 from torch.nn import functional as F
-from torch_concepts.nn import InferenceOutput
 from torchmetrics import Metric
 from torchmetrics.classification import MultilabelAUROC, MultilabelAveragePrecision
 
 
+class NullMetric(nn.Module):
+    """No-op stand-in for an unconfigured metric term."""
+
+    def update(self, **kwargs) -> None:
+        return None
+
+    def compute(self):
+        return None
+
+    def reset(self) -> None:
+        return None
+
+
 class TokenAccuracy(Metric):
     """Next-token prediction accuracy aggregating across batches."""
-
-    metric_name = "lm_accuracy"
 
     def __init__(self, ignore_index: int = -100, **kwargs):
         super().__init__(**kwargs)
@@ -22,58 +33,30 @@ class TokenAccuracy(Metric):
             "total", default=torch.tensor(0, dtype=torch.long), dist_reduce_fx="sum"
         )
 
-    def _get_logits(self, output) -> torch.Tensor | None:
-        return (
-            output.logits.get("next_token")
-            if isinstance(output.logits, dict)
-            else output.logits
-        )
-
-    def update(self, output: InferenceOutput, batch: dict):
-        logits = self._get_logits(output)
-        if logits is None:
+    def update(self, prediction: torch.Tensor, target: torch.Tensor, *extra):
+        if prediction is None:
             return
 
-        targets = batch["targets"]  # Shape: [B, T] or [B * T]
-
-        # Flatten tensors if necessary: logits -> [N, V], targets -> [N]
-        if logits.ndim == 3:
-            logits = logits.reshape(-1, logits.size(-1))
-        targets = targets.reshape(-1)
+        # Flatten tensors if necessary: prediction -> [N, V], target -> [N]
+        if prediction.ndim == 3:
+            prediction = prediction.reshape(-1, prediction.size(-1))
+        target = target.reshape(-1)
 
         # Mask out padding / ignore_index tokens (e.g. -100)
-        mask = targets != self.ignore_index
+        mask = target != self.ignore_index
         if not mask.any():
             return
 
-        pred_ids = logits[mask].argmax(dim=-1)
-        valid_targets = targets[mask]
+        pred_ids = prediction[mask].argmax(dim=-1)
+        valid_targets = target[mask]
 
         self.correct += (pred_ids == valid_targets).sum()
         self.total += valid_targets.numel()
 
-    def compute(self) -> dict[str, float]:
+    def compute(self) -> float:
         if self.total == 0:
-            return {self.metric_name: 0.0}
-        acc = (self.correct.float() / self.total).item()
-        return {self.metric_name: acc}
-
-
-class TokenResidualAccuracy(TokenAccuracy):
-    """Next-token accuracy of the corrected prediction f(x) + g(x)."""
-
-    metric_name = "lm_residual_accuracy"
-
-    def _get_logits(self, output: dict[str, InferenceOutput]) -> torch.Tensor | None:
-        base = output.get("next_token")
-        residual = output.get("next_token_residual")
-        if base is None or residual is None:
-            return None
-
-        f_logits = super()._get_logits(base)
-        if f_logits is None:
-            return None
-        return f_logits + residual.value
+            return 0.0
+        return (self.correct.float() / self.total).item()
 
 
 class ConceptAUC(Metric):
@@ -104,23 +87,21 @@ class ConceptAUC(Metric):
         if self.ap_metric is not None:
             self.ap_metric.reset()
 
-    def update(self, output: "InferenceOutput", batch: dict):
-        logits = output.logits["concepts"]  # shape: [B, T, n]
-        if logits is None:
+    def update(self, concept_logits: torch.Tensor, doc_spans: list, *extra):
+        if concept_logits is None:
             return
 
-        doc_spans = batch.get("doc_spans", [])
         if not doc_spans:
             return
 
         # Dynamically determine num_concepts on first forward pass
         if self.num_concepts is None:
-            num_concepts = logits.shape[-1]
-            self._lazy_init(num_concepts, device=logits.device)
+            num_concepts = concept_logits.shape[-1]
+            self._lazy_init(num_concepts, device=concept_logits.device)
 
         for batch_idx, tok_start, tok_end, concept_ids in doc_spans:
             # Span logits shape: [doc_len, n]
-            z_span = logits[batch_idx, tok_start:tok_end, :]
+            z_span = concept_logits[batch_idx, tok_start:tok_end, :]
 
             # log P(absent) = sum over tokens of -softplus(z_i)
             log_p_none = -F.softplus(z_span).sum(dim=0)  # shape: [n]
@@ -155,14 +136,7 @@ class ConceptAUC(Metric):
 
 
 class CausalConceptEffect(Metric):
-    """Mean absolute difference between next_token_residual logits when a concept is forced
-    on vs. forced off -- how much the residual-corrected prediction actually moves in response
-    to intervening on that one concept.
-
-    Expects, as `output`:
-        - "next_token_1": InferenceOutput of "next_token_residual" with the concept forced to 1.
-        - "next_token_0": InferenceOutput of "next_token_residual" with the concept forced to 0.
-    """
+    """Mean absolute difference between two predictions when a concept is forced on vs. forced off"""
 
     def __init__(self):
         super().__init__()
@@ -173,14 +147,9 @@ class CausalConceptEffect(Metric):
             dist_reduce_fx="sum",
         )
 
-    def update(self, output: dict[str, InferenceOutput], batch: dict = None):
-        logits_1 = output["next_token_1"].value
-        logits_0 = output["next_token_0"].value
+    def update(self, logits_1: torch.Tensor, logits_0: torch.Tensor):
         if logits_1 is None or logits_0 is None:
-            logits_1 = output["next_token_1"].logits
-            logits_0 = output["next_token_0"].logits
-            if logits_1 is None or logits_0 is None:
-                return
+            return
 
         diff = (logits_1 - logits_0).abs()  # shape: [B, T, vocab]
         self.total_effect += diff.sum()

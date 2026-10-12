@@ -1,0 +1,9 @@
+# @package wandb
+# W&B run settings. `mode: online` needs a one-time `wandb login`; see README.md for
+# offline/no-account alternatives.
+project: babysteerling-runs
+entity: null   # set to your W&B username/team, or leave null to use your default entity
+mode: online   # online | offline | disabled
+group: null    # set to tag a batch of related runs together (e.g. a sweep name)
+name: null     # run display name; defaults to model.wandb_name if unset (see configs/model/*.yaml)
+tags: []

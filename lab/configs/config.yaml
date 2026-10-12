@@ -1,14 +1,12 @@
-# Top-level config: picks one option from each group below by default. Override any of them
-# on the command line, e.g. `python train.py model=deep_head data.batch_size=32`.
 defaults:
-  - data: tinystories
-  - model: alm_residual
-  - loss: residual
-  - training: default
-  - wandb: default
-  - atlas: default
-  - corpus: tinystories
-  - steering: default
+  - data/corpus: tinystories
+  - data/atlas
+  - model: default
+  - model/backbone: alm
+  - model/bottleneck: steerling
+  - experiment/wandb
+  - experiment/training
+  - model/steering
   - _self_
 
 seed: 1337

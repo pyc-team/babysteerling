@@ -1,0 +1,12 @@
+# @package _global_
+bottleneck:
+  bottleneck: none
+
+loss:
+  losses:
+    token:
+      - _target_: babysteerling.loss.TokenLoss
+      - 1.0
+  metrics:
+    token:
+      _target_: babysteerling.metric.TokenAccuracy

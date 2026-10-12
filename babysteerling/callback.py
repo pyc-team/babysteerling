@@ -42,10 +42,7 @@ class TextGenerationLogger(Callback):
 
 
 class DiagnosticsLogger(Callback):
-    """Calls model.diagnostics() and logs the dict it returns -- appended to the same W&B run,
-    not a new one. Also callable directly (log_diagnostics), for runs that load an
-    already-trained checkpoint instead of calling trainer.fit().
-    """
+    """Calls model.diagnostics() and logs the dict it returns"""
 
     def __init__(self, decode_fn):
         super().__init__()

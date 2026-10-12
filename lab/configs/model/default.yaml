@@ -1,0 +1,11 @@
+# Shared hyperparams for every backbone/bottleneck combo. backbone/bottleneck themselves are
+# chosen directly in config.yaml / each variant (not a sub-group here) since that choice is
+# exactly what makes each variant distinct.
+n_embed: 128
+num_heads: 4
+num_kv_heads: 2
+n_layers: 4
+dropout: 0.2
+
+_target_: babysteerling.factory.build_model
+wandb_name: "${backbone.backbone}-${bottleneck.bottleneck}"

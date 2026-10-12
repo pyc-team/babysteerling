@@ -3,9 +3,9 @@ from pytorch_lightning.callbacks import TQDMProgressBar
 from torch_concepts.nn import DeterministicInference
 
 from babysteerling.loader import ConceptDataModule
-from babysteerling.loss import CompositeLoss, ConceptLoss, TokenLoss
+from babysteerling.loss import ConceptLoss, TokenLoss, Weighted
 from babysteerling.metric import TokenAccuracy, ConceptAUC
-from babysteerling.model.alm_cb import ConceptBottleneckALM
+from babysteerling.factory import build_model
 from babysteerling.trainer import LightningLM
 
 
@@ -27,23 +27,14 @@ def main():
     n_layers = 4
     dropout = 0.2
 
-    # 3. Instantiate CompositeLoss & Metrics
-    loss_fn = CompositeLoss(
-        losses={
-            "token": (TokenLoss(), 1.0),
-            "concept": (ConceptLoss(), 1.0),
-        },
-        metrics={
-            "token_accuracy": TokenAccuracy(),
-            "concept_auc": ConceptAUC(),
-        },
-    )
-
-    # 4. Instantiate Underlying PyTorch Model
+    # 3. Instantiate Underlying PyTorch Model -- loss/metric modules passed straight in as named
+    # kwargs, same as any other model hyperparameter
     # Note: dm.n_concepts is available after initializing DataModule or calling dm.setup("fit")
     dm.setup("fit")
     inference_type = DeterministicInference
-    raw_model = ConceptBottleneckALM(
+    raw_model = build_model(
+        backbone="alm",
+        bottleneck="cb",
         vocab_size=vocab_size,
         block_size=block_size,
         n_embed=n_embed,
@@ -52,11 +43,14 @@ def main():
         n_layers=n_layers,
         dropout=dropout,
         out_concepts=dm.n_concepts,
-        loss_fn=loss_fn,
         inference=inference_type,
+        token_loss=Weighted(TokenLoss(), 1.0),
+        concept_loss=Weighted(ConceptLoss(), 1.0),
+        token_metric=TokenAccuracy(),
+        concept_metric=ConceptAUC(),
     )
 
-    # 5. Wrap in PyTorch Lightning Module
+    # 4. Wrap in PyTorch Lightning Module
     pl_model = LightningLM(
         model=raw_model,
         lr=6e-4,
@@ -66,7 +60,7 @@ def main():
         weight_decay=0.1,
     )
 
-    # 6. Instantiate Trainer
+    # 5. Instantiate Trainer
     trainer = pl.Trainer(
         max_steps=500,
         accelerator="auto",
@@ -77,7 +71,7 @@ def main():
         callbacks=[TQDMProgressBar(refresh_rate=1)],
     )
 
-    # 7. Start Training
+    # 6. Start Training
     print("--- Launching PyTorch Lightning Trainer ---")
     trainer.fit(model=pl_model, datamodule=dm)
     print("\nTrainer execution finished successfully!")

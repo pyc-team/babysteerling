@@ -31,7 +31,7 @@ def _iter_documents(input_path, delimiter, read_size=1024 * 1024):
         raise ValueError("document delimiter must be a non-empty string")
 
     # Keep the final piece in case it continues in the next chunk.
-    with open(input_path, 'r', encoding='utf-8') as f:
+    with open(input_path, "r", encoding="utf-8") as f:
         remainder = ""
         while chunk := f.read(read_size):
             pieces = (remainder + chunk).split(delimiter)

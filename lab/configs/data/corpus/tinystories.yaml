@@ -1,0 +1,41 @@
+# @package _global_
+# Describes one corpus (what/where, and how training loads it -- always edited/swapped together
+# per-corpus) plus the shared DataLoader hyperparams. How the corpus is *processed* into concepts
+# is configs/data/atlas.yaml, a separate concern shared across every corpus. `sources` is always
+# a list, one entry per corpus. To train on a union of corpora, add more entries here (or copy
+# this file, e.g. configs/data/corpus/my_union.yaml, and run `python build_dataset.py
+# data/corpus=my_union`). Every source is downloaded, tagged, and assigned independently, but
+# they all share one concept library and one tokenizer, which is what makes it a real union
+# rather than concatenated datasets.
+#
+# Each source has its own document_delimiter, whatever string its raw file uses to separate
+# documents (sources can differ here). Nothing in babysteerling is specific to TinyStories; it
+# just needs plain-text files with documents separated by a delimiter, each short enough to be
+# one chunk.
+corpus:
+  tokenizer_vocab_size: 2000
+  # marker the pipeline inserts after every chunk in the tokenized stream. Unlike
+  # document_delimiter above, it isn't read from any source's raw text, so it stays one value
+  # even when sources use different delimiters (see prepare.train_tokenizer()).
+  boundary_token: "<|endoftext|>"
+
+  sources:
+    - name: tinystories
+      url: https://huggingface.co/datasets/roneneldan/TinyStories/resolve/main/TinyStoriesV2-GPT4-train.txt
+      document_delimiter: "<|endoftext|>"
+    # - name: my_other_corpus
+    #   url: https://example.com/my_other_corpus.txt
+    #   document_delimiter: "<|endoftext|>"
+
+# Points at build_dataset_auto.py's output (default atlas.output_dir: ./data). Run
+# `python build_dataset_auto.py` first if this doesn't exist yet.
+data:
+  data_dir: ./data
+  block_size: 256   # context length (tokens per training window)
+  batch_size: 64
+  min_lifted_tokens: 5  # drop concepts with fewer lifted tokens than this (see filter_concepts_by_lifted_tokens)
+
+  # DataLoader settings
+  train_val_split: 0.9
+  num_workers: 4
+  pin_memory: true  # DataLoader pin_memory=True (recommended for GPU training)

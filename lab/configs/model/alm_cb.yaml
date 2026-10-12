@@ -1,5 +1,0 @@
-defaults:
-  - alm
-
-_target_: babysteerling.model.alm_cb.ConceptBottleneckALM
-wandb_name: "alm-concept-bottleneck"

@@ -1,0 +1,24 @@
+# @package _global_
+# Same concept bottleneck as model/bottleneck=cb, with real concept supervision added. Matches
+# ConceptBottleneckMixin.TERMS exactly.
+bottleneck:
+  bottleneck: cb
+
+loss:
+  losses:
+    token:
+      - _target_: babysteerling.loss.TokenLoss
+      - 1.0
+    concept:
+      - _target_: babysteerling.loss.ConceptLoss
+      - 1.0
+    steering:
+      - _target_: babysteerling.loss.ExpressLoss
+      - 1.0
+  metrics:
+    token:
+      _target_: babysteerling.metric.TokenAccuracy
+    concept:
+      _target_: babysteerling.metric.ConceptAUC
+    causal_concept_effect:
+      _target_: babysteerling.metric.CausalConceptEffect

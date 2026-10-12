@@ -5,7 +5,7 @@ from torch.optim import AdamW
 from torch.optim.lr_scheduler import LambdaLR
 from torch_concepts.nn import InferenceOutput
 
-from .model.lm import LM
+from .backbone.lm import LM
 
 
 class LightningLM(pl.LightningModule):
@@ -31,72 +31,68 @@ class LightningLM(pl.LightningModule):
     def forward(self, *args, **kwargs) -> InferenceOutput:
         return self.model(*args, **kwargs)
 
+    def _total_loss(self, losses: dict[str, torch.Tensor]) -> torch.Tensor:
+        if not losses:
+            return torch.tensor(0.0, device=self.device)
+        return sum(losses.values())
+
     def training_step(self, batch: dict, batch_idx: int) -> torch.Tensor:
-        output = self.model.step(batch, step=self.global_step)
+        losses = self.model.step(batch, step=self.global_step)
+        total_loss = self._total_loss(losses)
 
-        # 1. Log total loss
         self.log(
-            "train/total_loss",
-            output.loss,
-            on_step=True,
-            on_epoch=True,
-            prog_bar=True,
+            "train/total_loss", total_loss, on_step=True, on_epoch=True, prog_bar=True
         )
+        for name, val in losses.items():
+            self.log(
+                f"train/{name}_loss", val, on_step=True, on_epoch=False, sync_dist=True
+            )
 
-        # 2. Log individual loss terms (e.g. train/token_loss, train/concept_loss)
-        if output.metrics_dict:
-            for key, val in output.metrics_dict.items():
-                if key != "total_loss":
-                    self.log(
-                        f"train/{key}",
-                        val,
-                        on_step=True,
-                        on_epoch=False,
-                        sync_dist=True,
-                    )
-
-        return output.loss
+        return total_loss
 
     def validation_step(self, batch: dict, batch_idx: int) -> None:
-        output = self.model.step(batch, step=self.global_step)
+        losses = self.model.step(batch, step=self.global_step)
+        total_loss = self._total_loss(losses)
 
-        # 1. Log validation total loss
         self.log(
             "val/total_loss",
-            output.loss,
+            total_loss,
             on_step=False,
             on_epoch=True,
             prog_bar=True,
             sync_dist=True,
         )
-
-        # 2. Log validation sub-losses
-        if output.metrics_dict:
-            for key, val in output.metrics_dict.items():
-                if key != "total_loss":
-                    self.log(
-                        f"val/{key}",
-                        val,
-                        on_step=False,
-                        on_epoch=True,
-                        sync_dist=True,
-                    )
+        for name, val in losses.items():
+            self.log(
+                f"val/{name}_loss", val, on_step=False, on_epoch=True, sync_dist=True
+            )
 
     def on_validation_epoch_end(self) -> None:
         """Computes and logs accumulated epoch-level evaluation metrics (e.g., ConceptAUC)."""
-        if hasattr(self.model, "loss_fn") and hasattr(
-            self.model.loss_fn, "compute_metrics"
-        ):
-            eval_metrics = self.model.loss_fn.compute_metrics()
-            for metric_name, metric_val in eval_metrics.items():
+        for name, metric in self.model.metrics.items():
+            value = metric.compute()
+            if value is None:
+                continue
+            if isinstance(value, dict):
+                for k, v in value.items():
+                    self.log(
+                        f"val/{name}_{k}",
+                        v,
+                        on_step=False,
+                        on_epoch=True,
+                        prog_bar=True,
+                        sync_dist=True,
+                    )
+            else:
                 self.log(
-                    f"val/{metric_name}",
-                    metric_val,
+                    f"val/{name}",
+                    value,
                     on_step=False,
                     on_epoch=True,
                     prog_bar=True,
                     sync_dist=True,
                 )
+            metric.reset()
 
     def configure_optimizers(self):
         # Separate parameters that decay vs weight decay exclusions (biases, layernorms, 1D terms)

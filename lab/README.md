@@ -34,18 +34,22 @@ python build_dataset_auto.py atlas.num_documents=2000 atlas.k=80
 build finishes, `python run_auto.py` just works.
 
 **Which corpus gets built and how it's processed are two separate configs.**
-`configs/corpus/tinystories.yaml` says what/where the data is: `sources`, a list of
+`configs/data/corpus/tinystories.yaml` says what/where the data is (`sources`, a list of
 `{name, url, document_delimiter}` entries, plus the shared `tokenizer_vocab_size` and
-`boundary_token`. `configs/atlas/default.yaml` says how it's processed: sample size, which models
-to use, clustering/dedup thresholds, and the two LLM prompt templates for tagging and labeling concepts.
+`boundary_token`) and how training loads it (`data_dir`, `block_size`, `batch_size`, ...).
+These two are always edited/swapped together per-corpus. `configs/data/atlas.yaml` says how the
+corpus is *processed*, shared across every corpus: sample size, which models to use,
+clustering/dedup thresholds, and the two LLM prompt templates for tagging and labeling concepts.
 
-To build from a different corpus, copy `configs/corpus/tinystories.yaml` to a new file (e.g.
-`configs/corpus/my_corpus.yaml`) and replace its `sources` entry. If your corpus isn't children's
-stories, also copy `configs/atlas/default.yaml` to `configs/atlas/my_corpus.yaml` and adjust
-`tag_prompt_template`/`label_prompt_template`. Then run:
+To build from a different corpus, copy `configs/data/corpus/tinystories.yaml` to a new file (e.g.
+`configs/data/corpus/my_corpus.yaml`) and replace its `sources`/loader entries. Then run:
 ```bash
-python build_dataset_auto.py corpus=my_corpus atlas=my_corpus
+python build_dataset_auto.py data/corpus=my_corpus
 ```
+`configs/data/atlas.yaml` is a single shared file (not a swappable group) since every corpus here
+is short children's stories; if a new corpus needs different tag/label prompts, turn it back into
+a group (`configs/data/atlas/default.yaml` + `configs/data/atlas/my_corpus.yaml`) and reference it
+the same way.
 
 **To train on several corpora at once**, add more entries to `sources`:
 ```yaml
@@ -76,18 +80,28 @@ This uses the defaults in `configs/config.yaml`.
 Override any hyperparameter from the command line, no file editing needed:
 ```bash
 python run_auto.py training.lr=1e-3 training.max_steps=2000
-python run_auto.py model=dlm_steerling
+python run_auto.py model/backbone=dlm model/bottleneck=residual
 ```
 
 Each run saves a checkpoint to `./checkpoints/babysteerling-tests/<run-id>/last.ckpt`, and
 logs a short sample generation to W&B at the end.
 
+## Config layout
 
-## Adjusting configs / adding a new variant
+`configs/` has three buckets: `data/` (what the corpus is and how it's processed/loaded),
+`model/` (architecture and loss), `experiment/` (run mechanics -- W&B, training schedule,
+sweeps). Within each, a group is a real subfolder only where there's an actual choice to make
+(`data/corpus/`, `model/backbone/`, `model/bottleneck/`); everything else is a single flat file,
+tuned via field overrides (e.g. `training.lr=1e-3`) rather than swapped as a whole preset.
 
-Each config group is a folder under `configs/` (e.g., `data/`, `model/`, `training/`). 
-To change a value permanently, edit the YAML file directly. To add a new
-architecture/loss variant add its own config copying the existing pattern.
+Backbone and bottleneck are independent groups; each bottleneck carries its own matching loss
+(see `configs/model/bottleneck/*.yaml` -- loss isn't a separate group, since most loss/bottleneck
+pairings are meaningless), so a combo is always just two flags:
+```bash
+python run_auto.py model/backbone=dlm model/bottleneck=residual
+```
+The one real fork is the `cb` bottleneck: `model/bottleneck=cb` is a no-concept-loss ablation,
+`model/bottleneck=cb_with_loss` is the same bottleneck with real concept supervision added.
 
 ## Running experiments in parallel (sweeps)
 
@@ -95,6 +109,7 @@ To run multiple experiments in parallel execute
 ```bash
 bash run_sweep.sh
 ```
-This script calls all models listed in `experiment/test_sweep.yaml`.
-To add a new model to the parallel run, add a configuration file under `variant/` 
-and add the model to the list in `test_sweep.yaml`.
+This runs `configs/experiment/sweep_all.yaml`, which sweeps the full backbone x bottleneck
+cartesian product. To add a new backbone or bottleneck to the sweep, add its config under
+`configs/model/backbone/` or `configs/model/bottleneck/` and add it to `sweep_all.yaml`'s
+`hydra.sweeper.params` lists -- no per-combo file needed.

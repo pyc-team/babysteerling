@@ -1,6 +1,0 @@
-# Default architecture
-n_embed: 128
-num_heads: 4
-num_kv_heads: 2
-n_layers: 4
-dropout: 0.2

@@ -1,4 +1,0 @@
-# @package _global_
-defaults:
-  - override /model: dlm_steerling
-  - override /loss: steerling

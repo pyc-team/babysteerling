@@ -1,9 +1,9 @@
 from torch_concepts.nn import DeterministicInference
 
 from babysteerling.loader import ConceptDataModule
-from babysteerling.loss import TokenLoss, CompositeLoss, ConceptLoss
+from babysteerling.loss import TokenLoss, ConceptLoss, Weighted
 from babysteerling.metric import TokenAccuracy, ConceptAUC
-from babysteerling.model.alm_cb import ConceptBottleneckALM
+from babysteerling.factory import build_model
 
 
 def main():
@@ -44,21 +44,12 @@ def main():
     dropout = 0.2
     out_concepts = dm.n_concepts
 
-    # 6. Instantiate CompositeLoss
-    loss_fn = CompositeLoss(
-        losses={
-            "token": (TokenLoss(), 1.0),
-            "concept": (ConceptLoss(), 1.0),
-        },
-        metrics={
-            "token_accuracy": TokenAccuracy(),
-            "concept_auc": ConceptAUC(),
-        },
-    )
-
-    # 7. Instantiate Model
+    # 6. Instantiate Model -- loss/metric modules are passed straight in as named kwargs, same
+    # as any other model hyperparameter
     inference_type = DeterministicInference
-    model = ConceptBottleneckALM(
+    model = build_model(
+        backbone="alm",
+        bottleneck="cb",
         vocab_size=vocab_size,
         block_size=block_size,
         n_embed=n_embed,
@@ -67,25 +58,30 @@ def main():
         n_layers=n_layers,
         dropout=dropout,
         out_concepts=out_concepts,
-        loss_fn=loss_fn,
         inference=inference_type,
+        token_loss=Weighted(TokenLoss(), 1.0),
+        concept_loss=Weighted(ConceptLoss(), 1.0),
+        token_metric=TokenAccuracy(),
+        concept_metric=ConceptAUC(),
     )
 
-    # 8. Execute 1 Step via model.step(batch)
+    # 7. Execute 1 Step via model.step(batch)
     model.eval()
-    output = model.step(batch, **{"step": 0})
+    losses = model.step(batch, step=0)
 
-    # 9. Inspect Results
+    # 8. Inspect Results
     print("\n--- Model Output Inspection ---")
-    print(f"Total Loss:            {output.loss.item():.4f}")
+    print(f"Total Loss:            {sum(losses.values()).item():.4f}")
 
     print("\n--- Metrics Readout ---")
-    eval_metrics = model.loss_fn.compute_metrics()
-    for k, v in eval_metrics.items():
-        print(f"  {k:<20}: {v:.4f}")
+    for name, metric in model.metrics.items():
+        value = metric.compute()
+        if value is None:
+            continue
+        print(f"  {name:<20}: {value}")
 
-    # 10. Backward Pass Verification
-    output.loss.backward()
+    # 9. Backward Pass Verification
+    sum(losses.values()).backward()
     print("\nBackward pass completed successfully!")
 
 

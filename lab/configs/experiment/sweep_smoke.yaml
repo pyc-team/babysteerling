@@ -1,0 +1,36 @@
+# @package _global_
+# Same backbone x bottleneck sweep as sweep_all.yaml, but with a tiny/fast model + data config so
+# the whole sweep runs in seconds
+defaults:
+  - override /hydra/launcher: joblib
+  - _self_
+
+hydra:
+  mode: MULTIRUN
+  launcher:
+    n_jobs: 2
+  sweeper:
+    params:
+      model/backbone: alm,dlm
+      model/bottleneck: none,cb,naive_residual,residual,steerling
+
+data:
+  num_workers: 0
+  block_size: 32
+  batch_size: 4
+
+model:
+  n_embed: 16
+  num_heads: 2
+  num_kv_heads: 1
+  n_layers: 1
+
+training:
+  max_steps: 2
+  val_check_interval: 1
+  limit_val_batches: 1
+  every_n_train_steps: 1000000
+  log_every_n_steps: 1
+
+wandb:
+  mode: disabled

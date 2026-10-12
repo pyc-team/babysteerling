@@ -1,6 +1,0 @@
-generation_callback:
-  _target_: babysteerling.callback.TextGenerationLogger
-  max_new_tokens: 200
-  temperature: 0.8
-  top_k: 50
-  gen_steps: 50  # Included if diffusion; ignored via **kwargs if autoregressive

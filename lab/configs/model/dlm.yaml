@@ -1,7 +1,0 @@
-defaults:
-  - base
-
-_target_: babysteerling.model.dlm.BlockCausalDLM
-wandb_name: "dlm-standard"
-
-diff_block_len: 32

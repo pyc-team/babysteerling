@@ -6,7 +6,6 @@ import os
 import hydra
 import pytorch_lightning as pl
 import torch
-from hydra.core.hydra_config import HydraConfig
 from hydra.utils import instantiate
 from pytorch_lightning.loggers import WandbLogger
 
@@ -19,7 +18,17 @@ from babysteerling import diffusion
 from babysteerling.callback import DiagnosticsLogger
 from babysteerling.data.utils import load_tokenizer
 from babysteerling.loader import ConceptDataModule
+from babysteerling.loss import Weighted
 from babysteerling.trainer import LightningLM
+
+
+def build_loss_kwargs(loss_cfg) -> dict:
+    kwargs = {}
+    for name, (module_cfg, weight) in loss_cfg.get("losses", {}).items():
+        kwargs[f"{name}_loss"] = Weighted(instantiate(module_cfg), weight)
+    for name, metric_cfg in loss_cfg.get("metrics", {}).items():
+        kwargs[f"{name}_metric"] = instantiate(metric_cfg)
+    return kwargs
 
 
 @hydra.main(config_path="configs", config_name="config", version_base=None)
@@ -53,12 +62,11 @@ def main(cfg: DictConfig):
     resume_ckpt_path = os.path.join(run_ckpt_dir, "last.ckpt")
     ckpt_exists = os.path.exists(resume_ckpt_path)
     # W&B logger setup
-    choices = HydraConfig.get().runtime.choices
     wandb_logger = WandbLogger(
         project=cfg.wandb.project,
         entity=cfg.wandb.entity,
         group=cfg.wandb.group,
-        name=choices.get("variant") or getattr(cfg.model, "wandb_name", None),
+        name=getattr(cfg.model, "wandb_name", None),
         mode=cfg.wandb.mode,
         config=config_dict,
         save_dir="./logs",
@@ -77,13 +85,11 @@ def main(cfg: DictConfig):
     )
     dm.setup("fit")
 
-    # 4. Dynamic model (architecture + loss) instantiation
+    # 4. Dynamic model (architecture) instantiation
     mask_token_id = diffusion.ensure_mask_token(tok)
-    loss_fn = instantiate(cfg.loss) if "loss" in cfg else None
     model_kwargs = {
         "vocab_size": len(tok.get_vocab()),
         "block_size": cfg.data.block_size,
-        "loss_fn": loss_fn,
         "inference": DeterministicInference,
         # the following are used only by some model types and ignored by others
         "out_concepts": [c["label"] for c in dm.concepts],
@@ -92,7 +98,15 @@ def main(cfg: DictConfig):
         "inj_layer": cfg.steering.inj_layer,
         "tau": cfg.steering.tau,
     }
-    model = instantiate(cfg.model, **model_kwargs, _recursive_=False)
+    loss_kwargs = build_loss_kwargs(cfg.loss) if "loss" in cfg else {}
+    model = instantiate(
+        cfg.model,
+        **cfg.backbone,
+        **cfg.bottleneck,
+        **loss_kwargs,
+        **model_kwargs,
+        _recursive_=False,
+    )
 
     # 5. Wrap in PyTorch Lightning Module
     pl_model = LightningLM(
@@ -154,8 +168,7 @@ def main(cfg: DictConfig):
             trainer.fit(model=pl_model, datamodule=dm)
         print("\nTrainer execution finished successfully!")
 
-        # 8. Report: validation metrics -> CSV, alongside the resolved config,
-        # both keyed by config_hash so they sit next to the checkpoint they belong to.
+        # 8. Save validation metrics
         config_path = os.path.join(run_ckpt_dir, "config.yaml")
         if not os.path.exists(config_path):
             OmegaConf.save(cfg, config_path)
@@ -170,8 +183,7 @@ def main(cfg: DictConfig):
                 writer.writerow([key, value])
         print(f"\n[Report] Wrote validation metrics to: {metrics_path}\n")
 
-        # Concept top-k heatmap data (only models overriding LM.diagnostics() return this,
-        # e.g. ConceptResidualALM -- no-op dict for every other model type).
+        # Save concept top-k heatmap data
         pl_model.model.eval()
         with torch.no_grad():
             diagnostics = pl_model.model.diagnostics(decode)

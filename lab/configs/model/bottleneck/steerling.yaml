@@ -1,0 +1,34 @@
+# @package _global_
+bottleneck:
+  bottleneck: steerling
+
+loss:
+  losses:
+    token:
+      - _target_: babysteerling.loss.TokenLoss
+      - 1.0
+    concept:
+      - _target_: babysteerling.loss.ConceptLoss
+      - 1.0
+    steering:
+      - _target_: babysteerling.loss.ExpressLoss
+      - 1.0
+    respond:
+      - _target_: babysteerling.loss.RespondLoss
+      - 1.0
+    independence_unknown:
+      - _target_: babysteerling.loss.IndependenceLoss
+      - 1.0
+    independence_residual:
+      - _target_: babysteerling.loss.IndependenceLoss
+      - 1.0
+    reconstruction:
+      - _target_: babysteerling.loss.ReconstructionLoss
+      - 1.0
+  metrics:
+    token:
+      _target_: babysteerling.metric.TokenAccuracy
+    concept:
+      _target_: babysteerling.metric.ConceptAUC
+    causal_concept_effect:
+      _target_: babysteerling.metric.CausalConceptEffect

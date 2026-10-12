@@ -7,7 +7,7 @@ import seaborn as sns
 from matplotlib.patches import Patch
 from omegaconf import OmegaConf
 
-CHECKPOINTS_DIR = "checkpoints"
+CHECKPOINTS_DIR = "checkpoints/babysteerling-runs"
 OUTPUT_DIR = "reports/plots"
 
 # Chart chrome, matching the house style (see dataviz skill: references/palette.md).
@@ -52,35 +52,45 @@ sns.set_theme(
 # matches every filter below. Leave empty to plot every run found under CHECKPOINTS_DIR.
 FILTERS = {
     "model.wandb_name": {
-        "dlm-steerling-bottleneck",
-        "alm-concept-bottleneck",
-        "alm-concept-residual",
-        "alm-concept-naive-residual",
-        "dlm-standard",
+        "alm-none",
+        "dlm-none",
+        "alm-cb",
+        "dlm-cb",
+        "alm-naive_residual",
+        "dlm-naive_residual",
+        "alm-steerling",
+        "dlm-steerling",
+        "alm-residual",
+        "dlm-residual",
     },
 }
 
 # Raw model.wandb_name -> display name used for bar labels. Unmapped names are shown as-is.
 MODEL_LABELS = {
-    "dlm-standard": "DLM",
-    "alm-concept-bottleneck": "ALM CBM",
-    "dlm-steerling-bottleneck": "Steerling",
-    "alm-concept-naive-residual": "ALM Naive Residual",
-    "alm-concept-residual": "ALM Residual",
+    "alm-none": "ALM",
+    "dlm-none": "DLM",
+    "alm-cb": "ALM CBM",
+    "dlm-cb": "DLM CBM",
+    "alm-naive_residual": "ALM Naive Residual",
+    "dlm-naive_residual": "DLM Naive Residual",
+    "alm-steerling": "ALM Steerling",
+    "dlm-steerling": "DLM Steerling",
+    "alm-residual": "ALM Residual",
+    "dlm-residual": "DLM Residual",
 }
 
 # Raw metrics.csv metric -> display name used for plot titles. Unmapped metrics are shown as-is.
 METRIC_LABELS = {
-    "val/macro_roc_auc": "Macro ROC-AUC",
-    "val/lm_accuracy": "LM Accuracy",
-    "val/macro_pr_auc": "Macro PR-AUC",
+    "val/concept_macro_roc_auc": "Macro ROC-AUC",
+    "val/token": "LM Accuracy",
+    "val/concept_macro_pr_auc": "Macro PR-AUC",
     "val/causal_concept_effect": "Causal Concept Effect",
     "val/total_loss": "Total Loss",
     "val/token_loss": "Token Loss",
     "val/concept_loss": "Concept Loss",
     "val/reconstruction_loss": "Reconstruction Loss",
     "val/independence_loss": "Independence Loss",
-    "val/lm_residual_accuracy": "LM Accuracy (Residual)",
+    "val/token_residual": "LM Accuracy (Residual)",
     "val/causal_concept_effect_concept": "Causal Concept Effect (Concept)",
     "val/token_residual_loss": "Token Loss (Residual)",
 }
@@ -90,7 +100,7 @@ METRIC_LABELS = {
 # between different models' pairs. Each tuple is (base_metric, variant_metric) -- raw metrics.csv
 # names. A model missing one side of the pair just gets a single bar.
 METRIC_GROUPS = [
-    ("val/lm_accuracy", "val/lm_residual_accuracy"),
+    ("val/token", "val/token_residual"),
     ("val/causal_concept_effect", "val/causal_concept_effect_concept"),
     ("val/token_loss", "val/token_residual_loss"),
 ]
@@ -122,17 +132,27 @@ _LATEX_SPECIALS = {
 }
 
 
+def savefig(fig, path_without_ext: str, **kwargs) -> None:
+    """Saves fig as both PNG (quick viewing) and PDF (paper figures) at the same path/kwargs."""
+    fig.savefig(f"{path_without_ext}.png", **kwargs)
+    fig.savefig(f"{path_without_ext}.pdf", **kwargs)
+
+
 def latex_escape(text: str) -> str:
     """Escapes TeX special characters in labels that may come from raw config/metric names
     (MODEL_LABELS/METRIC_LABELS are opt-in, so unmapped names fall back to e.g. "val/token_loss"
-    or "alm_residual", which would otherwise break usetex rendering)."""
+    or "alm_residual", which would otherwise break usetex rendering). Also falls back non-ASCII
+    characters (e.g. the U+FFFD replacement character a small/undertrained model's decoded BPE
+    tokens can contain) to "?" -- usetex's default font has no glyph for them and errors out.
+    """
+    text = "".join(ch if ch.isascii() else "?" for ch in text)
     return "".join(_LATEX_SPECIALS.get(ch, ch) for ch in text)
 
 
 def discover_runs(checkpoints_dir: str) -> list[dict]:
     """Finds every checkpoint dir that has both metrics.csv and config.yaml."""
     runs = []
-    pattern = os.path.join(checkpoints_dir, "*", "*", "metrics.csv")
+    pattern = os.path.join(checkpoints_dir, "*", "metrics.csv")
     for metrics_path in sorted(glob.glob(pattern)):
         run_dir = os.path.dirname(metrics_path)
         config_path = os.path.join(run_dir, "config.yaml")
@@ -287,9 +307,9 @@ def plot_combined_metric_group(
         ax.legend(handles=legend_handles, frameon=False, loc="best", fontsize=9)
 
     fig.tight_layout()
-    suffix = "_combined.png" if has_variant else ".png"
+    suffix = "_combined" if has_variant else ""
     fname = base_metric.replace("/", "_") + suffix
-    fig.savefig(os.path.join(output_dir, fname), dpi=200, bbox_inches="tight")
+    savefig(fig, os.path.join(output_dir, fname), dpi=200, bbox_inches="tight")
     plt.close(fig)
 
 
@@ -321,8 +341,8 @@ def plot_metrics(df: pd.DataFrame, output_dir: str) -> None:
         style_axes(ax, METRIC_LABELS.get(metric, metric))
 
         fig.tight_layout()
-        fname = metric.replace("/", "_") + ".png"
-        fig.savefig(os.path.join(output_dir, fname), dpi=200, bbox_inches="tight")
+        fname = metric.replace("/", "_")
+        savefig(fig, os.path.join(output_dir, fname), dpi=200, bbox_inches="tight")
         plt.close(fig)
 
 
@@ -336,7 +356,7 @@ def main():
     df = build_dataframe(runs)
     plot_metrics(df, OUTPUT_DIR)
     print(
-        f"Wrote {df['metric'].nunique()} plots to {OUTPUT_DIR}/ for {len(runs)} runs."
+        f"Wrote {df['metric'].nunique()} plots (PNG+PDF) to {OUTPUT_DIR}/ for {len(runs)} runs."
     )
 
 

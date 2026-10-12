@@ -1,0 +1,14 @@
+# @package _global_
+# Concept bottleneck present but no concept-supervision loss (ablation baseline). For real
+# concept supervision use model/bottleneck=cb_with_loss instead.
+bottleneck:
+  bottleneck: cb
+
+loss:
+  losses:
+    token:
+      - _target_: babysteerling.loss.TokenLoss
+      - 1.0
+  metrics:
+    token:
+      _target_: babysteerling.metric.TokenAccuracy

@@ -1,7 +1,0 @@
-# @package _global_
-
-hydra:
-  mode: MULTIRUN
-  sweeper:
-    params:
-      +variant: dlm_default,alm_cb_with_cb,alm_cb,alm_default,steerling_default

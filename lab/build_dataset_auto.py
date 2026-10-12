@@ -7,17 +7,17 @@ merged into one training set. That shared library is what makes it a real union,
 concatenated unrelated datasets: every source's chunks are assigned concepts from the same
 library.
 
-Which corpus/corpora to build from is a config concern: `corpus.sources` (see configs/corpus/)
-is a list, one entry per dataset. `atlas.*` (see configs/atlas/) holds the pipeline
-hyperparameters, shared across every source. Add or remove a dataset from the union by editing
-`corpus.sources`, no code changes needed.
+Which corpus/corpora to build from is a config concern: `corpus.sources` (see
+configs/data/corpus/) is a list, one entry per dataset. `atlas.*` (see configs/data/atlas.yaml)
+holds the pipeline hyperparameters, shared across every source. Add or remove a dataset from the
+union by editing `corpus.sources`, no code changes needed.
 
 Every stage is idempotent: it skips if its own output already exists, so re-running after a
 partial failure, or after changing a later stage's hyperparameters, doesn't redo finished work.
 
 Run with defaults:            python build_dataset.py
 Override any hyperparameter:  python build_dataset.py atlas.num_documents=2000 atlas.k=80
-Build a different corpus:     python build_dataset.py corpus=my_corpus
+Build a different corpus:     python build_dataset.py data/corpus=my_corpus
 (see README.md for the full explanation of config overrides, unions, and multirun)
 """
 

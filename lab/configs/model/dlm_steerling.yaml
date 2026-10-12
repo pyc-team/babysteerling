@@ -1,5 +1,0 @@
-defaults:
-  - dlm
-
-_target_: babysteerling.model.dlm_steerling.SteerlingDLM
-wandb_name: "dlm-steerling-bottleneck"

@@ -1,0 +1,19 @@
+# @package _global_
+
+defaults:
+  - override /hydra/launcher: joblib
+  - _self_
+
+hydra:
+  mode: MULTIRUN
+  launcher:
+    n_jobs: 2
+  sweeper:
+    params:
+      # cartesian product: all 10 backbone x bottleneck combinations (excludes
+      # model/bottleneck=cb_with_loss, a one-off variant on top of cb -- run it separately if needed)
+      model/backbone: alm,dlm
+      model/bottleneck: none,cb,naive_residual,residual,steerling
+
+data:
+  num_workers: 0

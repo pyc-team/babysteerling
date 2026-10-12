@@ -1,0 +1,27 @@
+# @package _global_
+bottleneck:
+  bottleneck: naive_residual
+  tie_weights: true
+
+loss:
+  losses:
+    token:
+      - _target_: babysteerling.loss.TokenLoss
+      - 1.0
+    concept:
+      - _target_: babysteerling.loss.ConceptLoss
+      - 1.0
+    token_residual:
+      - _target_: babysteerling.loss.TokenLoss
+      - 1.0
+  metrics:
+    token:
+      _target_: babysteerling.metric.TokenAccuracy
+    token_residual:
+      _target_: babysteerling.metric.TokenAccuracy
+    concept:
+      _target_: babysteerling.metric.ConceptAUC
+    causal_concept_effect:
+      _target_: babysteerling.metric.CausalConceptEffect
+    causal_concept_effect_concept:
+      _target_: babysteerling.metric.CausalConceptEffect

@@ -16,3 +16,4 @@ plotly
 pandas
 seaborn
 matplotlib
+pytest
